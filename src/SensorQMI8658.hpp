@@ -552,19 +552,58 @@ public:
         return sam[samples] * 6 * sensors;
     }
 
-    bool readFromFifo(IMUdata *acc, uint16_t accLenght, IMUdata *gyr, uint16_t gyrLenght)
+    uint16_t getFifoNeedBytesWTM(uint16_t accLength)
     {
-        uint16_t bytes = getFifoNeedBytes();
-        uint8_t *buffer = new uint8_t[bytes];
+        uint8_t sensors = 0;
+        uint8_t wtm = getWatermark();
+
+        if (gyroEn && accelEn)
+        {
+            sensors = 2;
+        }
+        else if (gyroEn || accelEn)
+        {
+            sensors = 1;
+        }
+
+        if (accLength > wtm)
+        {
+            return wtm * 6 * sensors;
+        }
+        else
+        {   
+            return accLength * 6 * sensors;
+        }
+    }
+
+    bool readFromFifo(IMUdata *acc, uint16_t accLength, IMUdata *gyr, uint16_t gyrLength)
+    {
+        uint16_t bytes;
+        uint8_t *buffer;
+
+        // if there is water mark use water mark else use fifo length
+        if (getWatermark() > 0)
+        {
+            bytes = getFifoNeedBytesWTM(accLength);
+        }
+        else
+        {
+            bytes = getFifoNeedBytes();
+        }
+
+        buffer = new uint8_t[bytes];
+
         if (!buffer)
         {
             LOG("No memory!");
-            return false;
+            return 0;
         }
-        if (!readFromFifo(buffer, bytes))
+
+        bytes = readFromFifo(buffer, bytes);
+        if (!bytes)
         {
             delete buffer;
-            return false;
+            return 0;
         }
 
         int counter = 0;
@@ -572,7 +611,7 @@ public:
         {
             if (accelEn)
             {
-                if (counter < accLenght)
+                if (counter < accLength)
                 {
                     acc[counter].x = (float)((int16_t)(buffer[i] | (buffer[i + 1] << 8))) * accelScales;
                     acc[counter].y = (float)((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8))) * accelScales;
@@ -583,7 +622,7 @@ public:
 
             if (gyroEn)
             {
-                if (counter < gyrLenght)
+                if (counter < gyrLength)
                 {
                     gyr[counter].x = (float)((int16_t)(buffer[i] | (buffer[i + 1] << 8))) * gyroScales;
                     gyr[counter].y = (float)((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8))) * gyroScales;
@@ -596,17 +635,32 @@ public:
         delete buffer;
         return true;
     }
-    
-    int readFromFifo(IMUdata *acc, uint16_t accLenght, IMUdata *gyr, uint16_t gyrLenght, uint16_t startIndex)
+
+    int readFromFifo(IMUdata *acc, uint16_t accLength, IMUdata *gyr, uint16_t gyrLength, uint16_t startIndex)
     {
-        uint16_t bytes = getFifoNeedBytes();
-        uint8_t *buffer = new uint8_t[bytes];
+        uint16_t bytes;
+        uint8_t *buffer;
+
+        // if there is water mark use water mark else use fifo length
+        if (getWatermark() > 0)
+        {
+            bytes = getFifoNeedBytesWTM(accLength);
+        }
+        else
+        {
+            bytes = getFifoNeedBytes();
+        }
+
+        buffer = new uint8_t[bytes];
+
         if (!buffer)
         {
             LOG("No memory!");
             return 0;
         }
-        if (!readFromFifo(buffer, bytes))
+
+        bytes = readFromFifo(buffer, bytes);
+        if (!bytes)
         {
             delete buffer;
             return 0;
@@ -617,7 +671,7 @@ public:
         {
             if (accelEn)
             {
-                if (counter < accLenght)
+                if (counter < accLength)
                 {
                     acc[startIndex].x = (float)((int16_t)(buffer[i] | (buffer[i + 1] << 8))) * accelScales;
                     acc[startIndex].y = (float)((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8))) * accelScales;
@@ -628,7 +682,7 @@ public:
 
             if (gyroEn)
             {
-                if (counter < gyrLenght)
+                if (counter < gyrLength)
                 {
                     gyr[startIndex].x = (float)((int16_t)(buffer[i] | (buffer[i + 1] << 8))) * gyroScales;
                     gyr[startIndex].y = (float)((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8))) * gyroScales;
@@ -645,18 +699,35 @@ public:
 
     int readFromFifoRaw(IMUdataRaw *acc, uint16_t accLength, IMUdataRaw *gyr, uint16_t gyrLength, uint16_t startIndex)
     {
-        uint16_t bytes = getFifoNeedBytes();
-        uint8_t *buffer = new uint8_t[bytes];
+
+        uint16_t bytes;
+        uint8_t *buffer;
+
+        // if there is water mark use water mark else use fifo length
+        if (getWatermark() > 0)
+        {
+            bytes = getFifoNeedBytesWTM(accLength);
+        }
+        else
+        {
+            bytes = getFifoNeedBytes();
+        }
+
+        buffer = new uint8_t[bytes];
+
         if (!buffer)
         {
             LOG("No memory!");
             return 0;
         }
-        if (!readFromFifo(buffer, bytes))
+
+        bytes = readFromFifo(buffer, bytes);
+        if (!bytes)
         {
             delete buffer;
             return 0;
         }
+        LOG("bytes: %d, accLength: %d", bytes, accLength);
 
         int counter = 0;
         for (int i = 0; i < bytes;)
@@ -668,6 +739,13 @@ public:
                     acc[startIndex].x = ((int16_t)(buffer[i] | (buffer[i + 1] << 8)));
                     acc[startIndex].y = ((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8)));
                     acc[startIndex].z = ((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8)));
+
+                    startIndex++;
+                    counter++;
+                }
+                else
+                {
+                    break;
                 }
                 i += 6;
             }
@@ -679,17 +757,22 @@ public:
                     gyr[startIndex].x = ((int16_t)(buffer[i] | (buffer[i + 1] << 8)));
                     gyr[startIndex].y = ((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8)));
                     gyr[startIndex].z = ((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8)));
+
+                    startIndex++;
+                    counter++;
+                }
+                else
+                {
+                    break;
                 }
                 i += 6;
             }
-            startIndex++;
-            counter++;
         }
         delete buffer;
         return counter;
     }
 
-    bool readFromFifo(uint8_t *data, size_t lenght)
+    uint16_t readFromFifo(uint8_t *data, size_t length)
     {
         uint8_t status[2];
         uint8_t fifo_sensors = 1;
@@ -738,7 +821,12 @@ public:
         fifo_bytes = fifo_level * (6 * fifo_sensors);
 
         LOG("fifo-level : %d fifo_bytes : %d fifo_sensors : %d\n", fifo_level, fifo_bytes, fifo_sensors);
-        if (lenght < fifo_bytes)
+
+        if (getWatermark() > 0)
+        {
+            fifo_bytes = length;
+        }
+        else if (length < fifo_bytes)
         {
             writeCommand(CTRL_CMD_RST_FIFO);
             return false;
@@ -762,9 +850,9 @@ public:
             }
         }
 
-        writeCommand(CTRL_CMD_RST_FIFO);
+        // writeCommand(CTRL_CMD_RST_FIFO);
 
-        return fifo_level;
+        return fifo_bytes;
     }
 
     int getFIFOSampleCount()
@@ -888,6 +976,11 @@ public:
             return true;
         }
         return false;
+    }
+
+    int getWatermark()
+    {
+        return (int8_t)(QMI8658_REG_FIFOWMKTH);
     }
 
     float getAccelerometerScales()
