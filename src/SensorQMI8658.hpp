@@ -578,8 +578,12 @@ public:
 
     bool readFromFifo(IMUdata *acc, uint16_t accLength, IMUdata *gyr, uint16_t gyrLength)
     {
-        uint16_t bytes;
-        uint8_t *buffer;
+        uint16_t bytes = getFIFOSampleCount();
+        if (bytes <= 0)
+        {
+            LOG("Invalid FIFO sample count");
+            return -1; // Error code
+        }
 
         // if there is water mark use water mark else use fifo length
         // if (getWatermark() > 0)
@@ -591,16 +595,16 @@ public:
         //     bytes = getFifoNeedBytes();
         // }
 
-        buffer = new uint8_t[bytes];
+        uint8_t *buffer = new uint8_t[bytes];
 
         if (!buffer)
         {
             LOG("No memory!");
+            delete[] buffer; // Correct deletion
             return 0;
         }
 
-        bytes = readFromFifo(buffer, bytes);
-        if (!bytes)
+        if (!readFromFifo(buffer, bytes))
         {
             delete buffer;
             return 0;
@@ -638,8 +642,12 @@ public:
 
     int readFromFifo(IMUdata *acc, uint16_t accLength, IMUdata *gyr, uint16_t gyrLength, uint16_t startIndex)
     {
-        uint16_t bytes;
-        uint8_t *buffer;
+        uint16_t bytes = getFIFOSampleCount();
+        if (bytes <= 0)
+        {
+            LOG("Invalid FIFO sample count");
+            return -1; // Error code
+        }
 
         // if there is water mark use water mark else use fifo length
         // if (getWatermark() > 0)
@@ -651,16 +659,16 @@ public:
         //     bytes = getFifoNeedBytes();
         // }
 
-        buffer = new uint8_t[bytes];
+        uint8_t *buffer = new uint8_t[bytes];
 
         if (!buffer)
         {
             LOG("No memory!");
+            delete[] buffer; // Correct deletion
             return 0;
         }
 
-        bytes = readFromFifo(buffer, bytes);
-        if (!bytes)
+        if (!readFromFifo(buffer, bytes))
         {
             delete buffer;
             return 0;
@@ -699,12 +707,14 @@ public:
 
     int readFromFifoRaw(IMUdataRaw *acc, uint16_t accLength, IMUdataRaw *gyr, uint16_t gyrLength, uint16_t startIndex)
     {
+        int bytes = getFIFOSampleCount();
+        if (bytes <= 0)
+        {
+            LOG("Invalid FIFO sample count");
+            return -1; // Error code
+        }
 
-        uint16_t bytes;
-        uint8_t *buffer;
-        buffer = new uint8_t[bytes];
-
-        // if there is water mark use water mark else use fifo length
+        // if there is water mark use water mark else use fifo length (stream mode)
         // if (getWatermark() > 0)
         // {
         //     bytes = getFifoNeedBytesWTM(accLength);
@@ -714,14 +724,16 @@ public:
         //     bytes = getFifoNeedBytes();
         // }
 
+        uint8_t *buffer = new uint8_t[bytes];
+
         if (!buffer)
         {
             LOG("No memory!");
+            delete[] buffer; // Correct deletion
             return 0;
         }
 
-        bytes = readFromFifo(buffer, bytes);
-        if (!bytes)
+        if (!readFromFifo(buffer, bytes))
         {
             delete buffer;
             return 0;
@@ -735,9 +747,9 @@ public:
             {
                 if (counter < accLength)
                 {
-                    acc[startIndex].x = ((int16_t)(buffer[i] | (buffer[i + 1] << 8)));
-                    acc[startIndex].y = ((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8)));
-                    acc[startIndex].z = ((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8)));
+                    acc[counter + startIndex].x = ((int16_t)(buffer[i] | (buffer[i + 1] << 8)));
+                    acc[counter + startIndex].y = ((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8)));
+                    acc[counter + startIndex].z = ((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8)));
                 }
                 else
                 {
@@ -750,9 +762,9 @@ public:
             {
                 if (counter < gyrLength)
                 {
-                    gyr[startIndex].x = ((int16_t)(buffer[i] | (buffer[i + 1] << 8)));
-                    gyr[startIndex].y = ((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8)));
-                    gyr[startIndex].z = ((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8)));
+                    gyr[counter + startIndex].x = ((int16_t)(buffer[i] | (buffer[i + 1] << 8)));
+                    gyr[counter + startIndex].y = ((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8)));
+                    gyr[counter + startIndex].z = ((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8)));
                 }
                 else
                 {
@@ -760,14 +772,13 @@ public:
                 }
                 i += 6;
             }
-            startIndex++;
             counter++;
         }
-        delete buffer;
+        delete[] buffer;
         return counter;
     }
 
-    uint16_t readFromFifo(uint8_t *data, size_t length)
+    bool readFromFifo(uint8_t *data, size_t length)
     {
         uint8_t status[2];
         uint8_t fifo_sensors = 1;
@@ -821,19 +832,20 @@ public:
         // {
         //     fifo_bytes = length;
         // }
-        // else if (length < fifo_bytes)
-        // {
-        //     writeCommand(CTRL_CMD_RST_FIFO);
-        //     return false;
-        // }
-
-        // fifo_bytes = getFIFOSampleCount();
 
         if (fifo_level)
         {
             writeCommand(CTRL_CMD_REQ_FIFO);
 
-            if (readRegister(QMI8658_REG_FIFODATA, data, fifo_bytes) ==
+            // if (readRegister(QMI8658_REG_FIFODATA, data, fifo_bytes) ==
+            //     DEV_WIRE_ERR)
+            // {
+            //     LOG("get fifo error !");
+            //     return false;
+            // }
+            size_t bytes_to_read = (length < fifo_bytes) ? length : fifo_bytes;
+
+            if (readRegister(QMI8658_REG_FIFODATA, data, bytes_to_read) ==
                 DEV_WIRE_ERR)
             {
                 LOG("get fifo error !");
@@ -846,28 +858,30 @@ public:
                 return false;
             }
         }
+        else
+        {
+            LOG("FIFO is empty");
+            return true; // Not necessarily an error condition
+        }
 
         writeCommand(CTRL_CMD_RST_FIFO);
 
-        return fifo_bytes;
+        return true;
     }
 
     int getFIFOSampleCount()
     {
         uint8_t countLSB = readRegister(QMI8658_REG_FIFOCOUNT);
         uint8_t countMSB = readRegister(QMI8658_REG_FIFOSTATUS) & 0x03;
-        if (countLSB ==
-                DEV_WIRE_ERR ||
-            countMSB == DEV_WIRE_ERR)
-        {
-            LOG("get fifo count error !");
-            return false;
-        }
-        // Merge the two values to form a 10-bit integer
-        int fifoCount = (countMSB << 8) | countLSB;
 
-        // Convert the count to bytes
-        int fifoByteCount = 2 * fifoCount;
+        if (countLSB == DEV_WIRE_ERR || countMSB == DEV_WIRE_ERR)
+        {
+            LOG("Get FIFO count error!");
+            return -1; // Return -1 to indicate an error
+        }
+
+        // Implement the formula directly
+        int fifoByteCount = 2 * (countMSB * 256 + countLSB);
 
         return fifoByteCount;
     }
