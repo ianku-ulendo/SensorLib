@@ -566,12 +566,12 @@ public:
             sensors = 1;
         }
 
-        if (accLength > wtm)
+        if (accLength >= wtm)
         {
             return wtm * 6 * sensors;
         }
         else
-        {   
+        {
             return accLength * 6 * sensors;
         }
     }
@@ -582,14 +582,14 @@ public:
         uint8_t *buffer;
 
         // if there is water mark use water mark else use fifo length
-        if (getWatermark() > 0)
-        {
-            bytes = getFifoNeedBytesWTM(accLength);
-        }
-        else
-        {
-            bytes = getFifoNeedBytes();
-        }
+        // if (getWatermark() > 0)
+        // {
+        //     bytes = getFifoNeedBytesWTM(accLength);
+        // }
+        // else
+        // {
+        //     bytes = getFifoNeedBytes();
+        // }
 
         buffer = new uint8_t[bytes];
 
@@ -642,14 +642,14 @@ public:
         uint8_t *buffer;
 
         // if there is water mark use water mark else use fifo length
-        if (getWatermark() > 0)
-        {
-            bytes = getFifoNeedBytesWTM(accLength);
-        }
-        else
-        {
-            bytes = getFifoNeedBytes();
-        }
+        // if (getWatermark() > 0)
+        // {
+        //     bytes = getFifoNeedBytesWTM(accLength);
+        // }
+        // else
+        // {
+        //     bytes = getFifoNeedBytes();
+        // }
 
         buffer = new uint8_t[bytes];
 
@@ -702,18 +702,17 @@ public:
 
         uint16_t bytes;
         uint8_t *buffer;
+        buffer = new uint8_t[bytes];
 
         // if there is water mark use water mark else use fifo length
-        if (getWatermark() > 0)
-        {
-            bytes = getFifoNeedBytesWTM(accLength);
-        }
-        else
-        {
-            bytes = getFifoNeedBytes();
-        }
-
-        buffer = new uint8_t[bytes];
+        // if (getWatermark() > 0)
+        // {
+        //     bytes = getFifoNeedBytesWTM(accLength);
+        // }
+        // else
+        // {
+        //     bytes = getFifoNeedBytes();
+        // }
 
         if (!buffer)
         {
@@ -739,9 +738,6 @@ public:
                     acc[startIndex].x = ((int16_t)(buffer[i] | (buffer[i + 1] << 8)));
                     acc[startIndex].y = ((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8)));
                     acc[startIndex].z = ((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8)));
-
-                    startIndex++;
-                    counter++;
                 }
                 else
                 {
@@ -757,9 +753,6 @@ public:
                     gyr[startIndex].x = ((int16_t)(buffer[i] | (buffer[i + 1] << 8)));
                     gyr[startIndex].y = ((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8)));
                     gyr[startIndex].z = ((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8)));
-
-                    startIndex++;
-                    counter++;
                 }
                 else
                 {
@@ -767,6 +760,8 @@ public:
                 }
                 i += 6;
             }
+            startIndex++;
+            counter++;
         }
         delete buffer;
         return counter;
@@ -822,15 +817,17 @@ public:
 
         LOG("fifo-level : %d fifo_bytes : %d fifo_sensors : %d\n", fifo_level, fifo_bytes, fifo_sensors);
 
-        if (getWatermark() > 0)
-        {
-            fifo_bytes = length;
-        }
-        else if (length < fifo_bytes)
-        {
-            writeCommand(CTRL_CMD_RST_FIFO);
-            return false;
-        }
+        // if (getWatermark() > 0)
+        // {
+        //     fifo_bytes = length;
+        // }
+        // else if (length < fifo_bytes)
+        // {
+        //     writeCommand(CTRL_CMD_RST_FIFO);
+        //     return false;
+        // }
+
+        // fifo_bytes = getFIFOSampleCount();
 
         if (fifo_level)
         {
@@ -850,7 +847,7 @@ public:
             }
         }
 
-        // writeCommand(CTRL_CMD_RST_FIFO);
+        writeCommand(CTRL_CMD_RST_FIFO);
 
         return fifo_bytes;
     }
@@ -869,7 +866,10 @@ public:
         // Merge the two values to form a 10-bit integer
         int fifoCount = (countMSB << 8) | countLSB;
 
-        return fifoCount;
+        // Convert the count to bytes
+        int fifoByteCount = 2 * fifoCount;
+
+        return fifoByteCount;
     }
 
     bool isFIFOFull()
@@ -980,7 +980,10 @@ public:
 
     int getWatermark()
     {
-        return (int8_t)(QMI8658_REG_FIFOWMKTH);
+        int watermark;
+        // Assuming you have a function to read from I2C or SPI
+        watermark = readRegister(QMI8658_REG_FIFOWMKTH);
+        return watermark;
     }
 
     float getAccelerometerScales()
