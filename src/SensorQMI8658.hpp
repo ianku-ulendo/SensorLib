@@ -738,7 +738,8 @@ public:
             delete buffer;
             return 0;
         }
-        LOG("bytes: %d, accLength: %d", bytes, accLength);
+        // LOG("bytes: %d, accLength: %d", bytes, accLength);
+        // LOG("startIndex: %d", startIndex);
 
         int counter = 0;
         for (int i = 0; i < bytes;)
@@ -750,6 +751,7 @@ public:
                     acc[counter + startIndex].x = ((int16_t)(buffer[i] | (buffer[i + 1] << 8)));
                     acc[counter + startIndex].y = ((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8)));
                     acc[counter + startIndex].z = ((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8)));
+                    // LOG("x: %f, y: %f, z: %f", (float)  (((int16_t)(buffer[i] | (buffer[i + 1] << 8)))) * accelScales, (float)((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8))) * accelScales, (float)((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8))) * accelScales);
                 }
                 else
                 {
@@ -772,6 +774,8 @@ public:
                 }
                 i += 6;
             }
+            // LOG("x: %f, y: %f, z: %f", (float)(acc[counter + startIndex].x) * accelScales, (float)(acc[counter + startIndex].y) * accelScales, (float)(acc[counter + startIndex].z) * accelScales);
+
             counter++;
         }
         delete[] buffer;
@@ -826,7 +830,7 @@ public:
         fifo_level = fifo_bytes / (3 * fifo_sensors);
         fifo_bytes = fifo_level * (6 * fifo_sensors);
 
-        LOG("fifo-level : %d fifo_bytes : %d fifo_sensors : %d\n", fifo_level, fifo_bytes, fifo_sensors);
+        // LOG("fifo-level : %d fifo_bytes : %d fifo_sensors : %d\n", fifo_level, fifo_bytes, fifo_sensors);
 
         // if (getWatermark() > 0)
         // {
