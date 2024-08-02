@@ -490,8 +490,6 @@ public:
 
   bool readFromFifo(IMUdata *acc, uint16_t accLength, IMUdata *gyr, uint16_t gyrLength) {
 
-    writeCommand(CTRL_CMD_REQ_FIFO);  // set FIFO to read mode, stop data collection
-
     uint16_t bytes = getFifoNeedBytes();
     uint8_t *buffer = new uint8_t[bytes];
 
@@ -501,14 +499,16 @@ public:
       return 0;
     }
 
-    if (!readFromFifoRegister(buffer, bytes)) {
+    int fifo_bytes = readFromFifoRegister(buffer);
+
+    if (fifo_bytes < 0) {
       delete buffer;
       return 0;
     }
-    restartFifo(); // Disable the FIFO Read Mode by setting FIFO_CTRL.FIFO_rd_mode to 0. New data will be filled into FIFO afterwards.  
+    restartFifo();  // Disable the FIFO Read Mode by setting FIFO_CTRL.FIFO_rd_mode to 0. New data will be filled into FIFO afterwards.
 
     int counter = 0;
-    for (int i = 0; i < bytes;i+=6) {
+    for (int i = 0; i < fifo_bytes; i += 6) {
       if (accelEn) {
         if (counter < accLength) {
           acc[counter].x = (float)((int16_t)(buffer[i] | (buffer[i + 1] << 8))) * accelScales;
@@ -533,8 +533,6 @@ public:
 
   int readFromFifo(IMUdata *acc, uint16_t accLength, IMUdata *gyr, uint16_t gyrLength, uint16_t startIndex) {
 
-    writeCommand(CTRL_CMD_REQ_FIFO);  // set FIFO to read mode, stop data collection
-
     uint16_t bytes = getFifoNeedBytes();
     uint8_t *buffer = new uint8_t[bytes];
 
@@ -544,14 +542,16 @@ public:
       return 0;
     }
 
-    if (!readFromFifoRegister(buffer, bytes)) {
+    int fifo_bytes = readFromFifoRegister(buffer);
+
+    if (fifo_bytes < 0) {
       delete buffer;
       return 0;
     }
-    restartFifo(); // Disable the FIFO Read Mode by setting FIFO_CTRL.FIFO_rd_mode to 0. New data will be filled into FIFO afterwards.  
+    restartFifo();  // Disable the FIFO Read Mode by setting FIFO_CTRL.FIFO_rd_mode to 0. New data will be filled into FIFO afterwards.
 
     int counter = 0;
-    for (int i = 0; i < bytes; i += 6) {
+    for (int i = 0; i < fifo_bytes; i += 6) {
       if (accelEn) {
         if (counter < accLength) {
           acc[counter + startIndex].x = (float)((int16_t)(buffer[i] | (buffer[i + 1] << 8))) * accelScales;
@@ -582,8 +582,6 @@ public:
 
   int readFromFifoRaw(IMUdataRaw *acc, uint16_t accLength, IMUdataRaw *gyr, uint16_t gyrLength, uint16_t startIndex) {
 
-    writeCommand(CTRL_CMD_REQ_FIFO);  // set FIFO to read mode, stop data collection
-
     uint16_t bytes = getFifoNeedBytes();
     uint8_t *buffer = new uint8_t[bytes];
 
@@ -593,14 +591,17 @@ public:
       return 0;
     }
 
-    if (!readFromFifoRegister(buffer, bytes)) {
+    int fifo_bytes = readFromFifoRegister(buffer);
+
+    if (fifo_bytes < 0) {
       delete buffer;
       return 0;
     }
-    restartFifo(); // Disable the FIFO Read Mode by setting FIFO_CTRL.FIFO_rd_mode to 0. New data will be filled into FIFO afterwards.  
+
+    restartFifo();  // Disable the FIFO Read Mode by setting FIFO_CTRL.FIFO_rd_mode to 0. New data will be filled into FIFO afterwards.
 
     int counter = 0;
-    for (int i = 0; i < bytes;i += 6) {
+    for (int i = 0; i < fifo_bytes; i += 6) {
       if (accelEn) {
         if (counter < accLength) {
           acc[counter + startIndex].x = ((int16_t)(buffer[i] | (buffer[i + 1] << 8)));
@@ -608,37 +609,29 @@ public:
           acc[counter + startIndex].z = ((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8)));
         } else {
           LOG("External buffer is out of memory.");
+          LOG("Counter: %d, accLength: %d", counter, accLength);
           break;
         }
+        counter++;
       }
-
-      if (gyroEn) {
-        if (counter < gyrLength) {
-          gyr[counter + startIndex].x = ((int16_t)(buffer[i] | (buffer[i + 1] << 8)));
-          gyr[counter + startIndex].y = ((int16_t)(buffer[i + 2] | (buffer[i + 3] << 8)));
-          gyr[counter + startIndex].z = ((int16_t)(buffer[i + 4] | (buffer[i + 5] << 8)));
-        } else {
-          LOG("External buffer is out of memory.");
-          break;
-        }
-      }
-      counter++;
     }
 
     delete[] buffer;
     return counter;
   }
 
-  bool readFromFifoRegister(uint8_t *data, size_t length) {
+  int readFromFifoRegister(uint8_t *data) {
     uint8_t status[2];
     uint8_t fifo_sensors = 1;
     uint16_t fifo_bytes = 0;
     uint16_t fifo_level = 0;
 
+    writeCommand(CTRL_CMD_REQ_FIFO);  // set FIFO to read mode, stop data collection
+
     // get fifo status
     int val = readRegister(QMI8658_REG_FIFOSTATUS);
     if (val == DEV_WIRE_ERR) {
-      return false;
+      return -1;
     }
     LOG("fifo status:0x%x ", val);
 
@@ -662,27 +655,34 @@ public:
 
     fifo_level = fifo_bytes / (3 * fifo_sensors);
 
-    LOG("fifo-level : %d fifo_bytes : %d fifo_sensors : %d\n", fifo_level, fifo_bytes, fifo_sensors);
+    // LOG("fifo-level : %d fifo_bytes : %d fifo_sensors : %d\n", fifo_level, fifo_bytes, fifo_sensors);
 
     if (fifo_level) {
+
       if (readRegister(QMI8658_REG_FIFODATA, data, fifo_bytes) == DEV_WIRE_ERR) {
         LOG("get fifo error !");
-        return false;
+        return -1;
       }
     } else {
       LOG("FIFO is empty");
     }
 
-    return true;
+    return fifo_bytes;
   }
 
-  void restartFifo() {
+  bool restartFifo() {
 
     int val = writeRegister(QMI8658_REG_FIFOCTRL, fifoMode);
     if (val == DEV_WIRE_ERR) {
       return false;
     }
-    writeCommand(CTRL_CMD_RST_FIFO);
+
+    if (fifoMode & 0x03 == FIFO_MODE_FIFO) {
+      LOG("FIFO is in FIFO mode");
+      writeCommand(CTRL_CMD_RST_FIFO);
+    }
+
+    return true;
   }
 
   int getFIFOSampleCount() {
@@ -731,7 +731,9 @@ public:
   }
 
   void resetFIFO() {
-    writeCommand(CTRL_CMD_RST_FIFO);
+
+    writeCommand(CTRL_CMD_REQ_FIFO);  // set FIFO to read mode, stop data collection
+    restartFifo();
   }
 
   bool enableAccelerometer() {
@@ -770,6 +772,18 @@ public:
       rawBuffer[0] = (int16_t)(buffer[1] << 8) | (buffer[0]);
       rawBuffer[1] = (int16_t)(buffer[3] << 8) | (buffer[2]);
       rawBuffer[2] = (int16_t)(buffer[5] << 8) | (buffer[4]);
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  bool getAccelRaw(IMUdataRaw *rawBuffer, int startIndex) {
+    uint8_t buffer[6] = { 0 };
+    if (readRegister(QMI8658_REG_AX_L, buffer, 6) != DEV_WIRE_ERR) {
+      rawBuffer[startIndex].x = (int16_t)(buffer[1] << 8) | (buffer[0]);
+      rawBuffer[startIndex].y = (int16_t)(buffer[3] << 8) | (buffer[2]);
+      rawBuffer[startIndex].z = (int16_t)(buffer[5] << 8) | (buffer[4]);
     } else {
       return false;
     }
